@@ -17,6 +17,7 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:flex-end;justify-content:center;z-index:9}.modal.show{display:flex}
 .sheet{background:var(--card);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px;max-height:85vh;overflow:auto}
 .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);gap:10px}.kv span:first-child{color:var(--mu)}.err{color:var(--rd);font-size:13px;margin-bottom:6px}
+@media print{header,nav,button,select,input,.modal{display:none!important}body{padding:0}}
 </style></head><body>
 <header><b>BOND &amp; PROSPER</b><span id="who"></span></header>
 <main id="app"></main><nav id="nav"></nav>
@@ -39,7 +40,7 @@ const ml=k=>MN[+k.slice(5,7)-1]+" "+k.slice(0,4);
 const ini=n=>String(n||"?").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
 const METH={bkash:"bKash",nagad:"Nagad",bank_transfer:"Bank transfer",cash:"Cash",other:"Other"};
 const RN={member:"Member",admin:"Admin",super_admin:"Super Admin"};
-let uid=null,me=null,P=[],S={},TT={},F={},PAYC=[],PAYM=[],tab="dash",q="",pm=CUR,idle,tm,lastPr=null;
+let uid=null,me=null,P=[],S={},TT={},F={},PAYC=[],PAYM=[],tab="dash",q="",pm=CUR,idle,tm,lastPr=null,RQ=[],PH={},CH=[],SR=[];
 const isA=()=>me&&me.role!=="member";
 const hide=()=>$("md").classList.remove("show");
 const sh=h=>{$("sh").innerHTML=h;$("md").classList.add("show")};
@@ -56,17 +57,17 @@ document.addEventListener("click",()=>{if(uid)bump()});
 
 async function start(){await load();if(!me||me.status!=="active"){await out();return}
 $("who").innerHTML=esc(me.full_name)+"<br>"+RN[me.role];bump();
-const ch=sb.channel("live");["payments","settings","profiles"].forEach(t=>ch.on("postgres_changes",{event:"*",schema:"public",table:t},sched));ch.subscribe()}
-function sched(){clearTimeout(tm);tm=setTimeout(async()=>{await load();draw()},400)}
+const ch=sb.channel("live");["payments","settings","profiles","profile_change_requests"].forEach(t=>ch.on("postgres_changes",{event:"*",schema:"public",table:t},sched));ch.on("postgres_changes",{event:"*",schema:"public",table:"messages"},()=>{if(tab==="chat")openChat()});ch.subscribe()}
+function sched(){clearTimeout(tm);tm=setTimeout(async()=>{await load()},400)}
 async function load(){
-const r=await Promise.all([sb.from("profiles").select("*").order("member_no"),sb.from("settings").select("*").single(),sb.from("member_totals").select("*"),sb.from("fund_summary").select("*").single(),sb.from("payments").select("member_id").eq("for_month",CUR),sb.from("payments").select("*").eq("for_month",pm)]);
+const r=await Promise.all([sb.from("profiles").select("*").order("member_no"),sb.from("settings").select("*").single(),sb.from("member_totals").select("*"),sb.from("fund_summary").select("*").single(),sb.from("payments").select("member_id").eq("for_month",CUR),sb.from("payments").select("*").eq("for_month",pm),sb.from("profile_change_requests").select("*").eq("status","pending")]);
 const e=r.find(x=>x.error);if(e){fail(e.error);return}
-P=r[0].data;S=r[1].data;TT=Object.fromEntries(r[2].data.map(x=>[x.member_id,x]));F=r[3].data;PAYC=r[4].data;PAYM=r[5].data;
-me=P.find(x=>x.id===uid);if(me)draw()}
+P=r[0].data;S=r[1].data;TT=Object.fromEntries(r[2].data.map(x=>[x.member_id,x]));F=r[3].data;PAYC=r[4].data;PAYM=r[5].data;RQ=r[6].data;await loadPh();
+me=P.find(x=>x.id===uid);if(me&&tab!=="chat")draw()}
 
 function draw(){if(!me)return;
-$("nav").innerHTML=[["dash","Home"],["mem","Members"],["pay","Payments"],["acc","Account"]].map(x=>`<button class="${tab===x[0]?"on":""}" onclick="tab='${x[0]}';draw()">${x[1]}</button>`).join("");
-$("app").innerHTML={dash,mem,pay,acc}[tab]();window.scrollTo(0,0)}
+$("nav").innerHTML=[["dash","Home"],["mem","Members"],["pay","Payments"],["chat","Chat"],["acc","Account"]].map(x=>`<button class="${tab===x[0]?"on":""}" onclick="tab='${x[0]}';draw()">${x[1]}</button>`).join("");
+$("app").innerHTML={dash,mem,pay,chat,acc,stm:stmtForm}[tab]();if(tab==="chat")openChat();else window.scrollTo(0,0)}
 
 function dash(){const act=P.filter(m=>m.status==="active"),ids=new Set(PAYC.map(x=>x.member_id)),paid=act.filter(m=>ids.has(m.id)).length;
 return `<div class="grid"><div class="card stat"><small>Total fund</small><b>${fmt(F.total_fund)}</b></div><div class="card stat"><small>Total members</small><b>${F.active_members}</b></div>
@@ -74,34 +75,37 @@ return `<div class="grid"><div class="card stat"><small>Total fund</small><b>${f
 <div class="card"><h2>Monthly instalment</h2><b style="font-size:22px">${fmt(S.installment_amount)}</b> per member</div>
 <div class="card"><h2>Send money to</h2>${[["Bank",S.bank_name],["Account no.",S.account_no],["Holder",S.account_holder],["Branch",S.branch],["Mobile banking",S.mobile_banking]].map(x=>`<div class="kv"><span>${x[0]}</span><b>${esc(x[1]||"-")}</b></div>`).join("")}
 ${isA()?`<button class="b" style="margin-top:10px" onclick="editS()">Edit instalment and payment details</button>`:""}</div>`}
-const SF=[["installment_amount","Monthly instalment (number)"],["bank_name","Bank name"],["account_no","Account number"],["account_holder","Account holder"],["branch","Branch"],["mobile_banking","Mobile banking number"]];
+const SF=[["installment_amount","Monthly instalment (number)"],["bank_name","Bank name"],["account_no","Account number"],["account_holder","Account holder"],["branch","Branch"],["mobile_banking","Mobile banking number"],["meeting_link","Meeting link (https://, Google Meet or Jitsi)"]];
 function editS(){sh(`<h2>Edit payment details</h2>${SF.map(f=>`<small style="color:var(--mu)">${f[1]}</small><input id="s_${f[0]}" value="${esc(S[f[0]])}">`).join("")}<button class="b" onclick="saveS()">Save</button>`)}
 async function saveS(){const o={updated_at:new Date().toISOString()};SF.forEach(f=>o[f[0]]=$("s_"+f[0]).value.trim());o.installment_amount=Number(o.installment_amount);
 if(!(o.installment_amount>0)){alert("Instalment must be a number above 0");return}
 const{error}=await sb.from("settings").update(o).eq("id",1);if(error)return fail(error);hide();await load()}
 
-function mem(){const l=P.filter(m=>m.status==="active"&&m.full_name.toLowerCase().includes(q.toLowerCase()));
-return `<input placeholder="Search members" value="${esc(q)}" oninput="q=this.value;$('ml').innerHTML=rows()"><div class="card" id="ml">${rows()}</div>`}
-function rows(){const l=P.filter(m=>m.status==="active"&&m.full_name.toLowerCase().includes(q.toLowerCase()));
-return l.map(m=>{const t=TT[m.id]||{};return `<div class="row" onclick="prof('${m.id}')"><div class="av">${ini(m.full_name)}</div><div class="grow">${esc(m.full_name)}<small>${esc(m.phone||"")}</small></div><div style="text-align:right"><b>${fmt(t.total_saved)}</b><small style="color:var(--mu)">${Number(t.share_percent||0).toFixed(2)}%</small></div></div>`}).join("")||"No match"}
+function mem(){const l=P.filter(m=>(m.status==="active"||isA())&&m.full_name.toLowerCase().includes(q.toLowerCase()));
+return (isA()?`<button class="b" onclick="addU()">+ Add new member / admin</button><button class="b g" onclick="appr()">Profile change requests (${RQ.length})</button>`:"")+`<input placeholder="Search members" value="${esc(q)}" oninput="q=this.value;$('ml').innerHTML=rows()"><div class="card" id="ml">${rows()}</div>`}
+function rows(){const l=P.filter(m=>(m.status==="active"||isA())&&m.full_name.toLowerCase().includes(q.toLowerCase()));
+return l.map(m=>{const t=TT[m.id]||{};return `<div class="row" onclick="prof('${m.id}')">${av(m)}<div class="grow">${esc(m.full_name)}<small>${esc(m.phone||"")}${m.status==="removed"?" \u00b7 Removed":""}</small></div><div style="text-align:right"><b>${fmt(t.total_saved)}</b><small style="color:var(--mu)">${Number(t.share_percent||0).toFixed(2)}%</small></div></div>`}).join("")||"No match"}
 async function prof(id){const m=P.find(x=>x.id===id),t=TT[id]||{};lastPr=null;
 if(isA()||id===uid){const r=await sb.from("profiles_private").select("*").eq("id",id).single();lastPr=r.data}
-let h=`<div style="text-align:center"><div class="av" style="width:72px;height:72px;margin:0 auto 8px;font-size:24px">${ini(m.full_name)}</div><b style="font-size:18px">${esc(m.full_name)}</b><br><small style="color:var(--mu)">User ID: M${String(m.member_no).padStart(3,"0")}</small></div><div style="margin-top:10px">
+let h=`<div style="text-align:center"><div style="margin:0 auto 8px;width:72px">${av(m,72)}</div><b style="font-size:18px">${esc(m.full_name)}</b><br><small style="color:var(--mu)">User ID: ${esc(m.login_id||"-")} \u00b7 ${RN[m.role]}</small></div><div style="margin-top:10px">
 <div class="kv"><span>Contact</span><b>${esc(m.phone||"-")}</b></div><div class="kv"><span>Total saving</span><b>${fmt(t.total_saved)}</b></div><div class="kv"><span>Share of fund</span><b>${Number(t.share_percent||0).toFixed(2)}%</b></div>`;
 if(lastPr)h+=PF.map(f=>`<div class="kv"><span>${f[1]}</span><b>${esc(lastPr[f[0]]||"-")}</b></div>`).join("");
-if(isA())h+=`<button class="b" style="margin-top:10px" onclick="editM('${id}')">Edit profile</button>`;
+if(isA()){h+=`<button class="b" style="margin-top:10px" onclick="editM('${id}')">Edit profile</button><button class="b g" onclick="resetPw('${id}')">Set new password</button>`;
+if(id!==uid&&(m.role==="member"||me.role==="super_admin"))h+=m.status==="active"?`<button class="b r" onclick="rem('${id}','remove')">Remove member</button>`:`<button class="b" onclick="rem('${id}','restore')">Restore member</button>`;
+if(me.role==="super_admin"&&id!==uid&&m.status==="active")h+=`<button class="b g" onclick="setRole('${id}','${m.role==="admin"?"member":"admin"}')">${m.role==="admin"?"Make normal member":"Make admin"}</button>`}
+else if(id===uid)h+=`<button class="b" style="margin-top:10px" onclick="reqM()">Request profile change</button>`;
 sh(h+"</div>")}
 const PF=[["dob","Date of birth"],["nid","NID number"],["father_name","Father\u2019s name"],["mother_name","Mother\u2019s name"],["nominee_name","Nominee name"]];
 function editM(id){const m=P.find(x=>x.id===id),p=lastPr||{};
-sh(`<h2>Edit member</h2><small style="color:var(--mu)">Full name</small><input id="e_full_name" value="${esc(m.full_name)}"><small style="color:var(--mu)">Contact no.</small><input id="e_phone" value="${esc(m.phone||"")}">${PF.map(f=>`<small style="color:var(--mu)">${f[1]}</small><input id="e_${f[0]}" ${f[0]==="dob"?'type="date"':""} value="${esc(p[f[0]]||"")}">`).join("")}<button class="b" onclick="saveM('${id}')">Save changes</button>`)}
+sh(`<h2>Edit member</h2><small style="color:var(--mu)">Full name</small><input id="e_full_name" value="${esc(m.full_name)}"><small style="color:var(--mu)">Contact no.</small><input id="e_phone" value="${esc(m.phone||"")}">${PF.map(f=>`<small style="color:var(--mu)">${f[1]}</small><input id="e_${f[0]}" ${f[0]==="dob"?'type="date"':""} value="${esc(p[f[0]]||"")}">`).join("")}<small style="color:var(--mu)">Photo</small><input id="ph" type="file" accept="image/*"><button class="b" onclick="saveM('${id}')">Save changes</button>`)}
 async function saveM(id){const v=k=>$("e_"+k).value.trim()||null;
 if(!v("full_name")){alert("Name is required");return}
-const a=await sb.from("profiles").update({full_name:v("full_name"),phone:v("phone")}).eq("id",id);if(a.error)return fail(a.error);
+let pp=null;try{pp=await upPhoto(id)}catch(e){return fail(e)}const po={full_name:v("full_name"),phone:v("phone")};if(pp)po.photo_path=pp;const a=await sb.from("profiles").update(po).eq("id",id);if(a.error)return fail(a.error);
 const o={};PF.forEach(f=>o[f[0]]=v(f[0]));const b=await sb.from("profiles_private").update(o).eq("id",id);if(b.error)return fail(b.error);hide();await load()}
 
 function pay(){const ids=new Map(PAYM.map(x=>[x.member_id,x])),act=P.filter(m=>m.status==="active"),c=act.filter(m=>ids.has(m.id)).length;
-return `<select onchange="setPm(this.value)">${MONTHS.map(k=>`<option value="${k}" ${k===pm?"selected":""}>${ml(k)}</option>`).join("")}</select>${isA()?`<button class="b" onclick="addP()">+ Record a payment</button>`:""}
-<div class="card"><h2>${ml(pm)}: ${c} paid, ${act.length-c} due</h2>${act.map(m=>{const r=ids.get(m.id);return `<div class="row" onclick="prof('${m.id}')"><div class="av">${ini(m.full_name)}</div><div class="grow">${esc(m.full_name)}<small>${r?r.paid_on+" \u00b7 "+(METH[r.method]||r.method)+" \u00b7 "+fmt(r.amount):"Not paid yet"}</small></div><span class="tag ${r?"paid":"due"}">${r?"Paid":"Due"}</span></div>`}).join("")}</div>`}
+return `<button class="b g" onclick="tab='stm';draw()">Statement (Excel / PDF)</button><select onchange="setPm(this.value)">${MONTHS.map(k=>`<option value="${k}" ${k===pm?"selected":""}>${ml(k)}</option>`).join("")}</select>${isA()?`<button class="b" onclick="addP()">+ Record a payment</button>`:""}
+<div class="card"><h2>${ml(pm)}: ${c} paid, ${act.length-c} due</h2>${act.map(m=>{const r=ids.get(m.id);return `<div class="row" onclick="prof('${m.id}')">${av(m)}<div class="grow">${esc(m.full_name)}<small>${r?r.paid_on+" \u00b7 "+(METH[r.method]||r.method)+" \u00b7 "+fmt(r.amount):"Not paid yet"}</small></div><span class="tag ${r?"paid":"due"}">${r?"Paid":"Due"}</span></div>`}).join("")}</div>`}
 async function setPm(v){pm=v;const r=await sb.from("payments").select("*").eq("for_month",pm);if(r.error)return fail(r.error);PAYM=r.data;draw()}
 function addP(){sh(`<h2>Record payment</h2><select id="p1">${P.filter(m=>m.status==="active").map(m=>`<option value="${m.id}">${esc(m.full_name)}</option>`).join("")}</select><select id="p2">${MONTHS.map(k=>`<option value="${k}" ${k===pm?"selected":""}>${ml(k)}</option>`).join("")}</select><input id="p3" type="number" value="${S.installment_amount}"><input id="p4" type="date" value="${new Date().toISOString().slice(0,10)}"><select id="p5">${Object.entries(METH).map(x=>`<option value="${x[0]}">${x[1]}</option>`).join("")}</select><button class="b" onclick="saveP()">Save payment</button>`)}
 async function saveP(){const o={member_id:$("p1").value,for_month:$("p2").value,amount:Number($("p3").value),paid_on:$("p4").value,method:$("p5").value};
@@ -113,6 +117,36 @@ function acc(){return `<div class="card"><h2>${esc(me.full_name)}</h2><div class
 <button class="b g" onclick="out()">Log out</button>`}
 async function chPw(){const a=$("n1").value;if(a.length<8){$("ne").textContent="Use at least 8 characters.";return}if(a!==$("n2").value){$("ne").textContent="The two passwords do not match.";return}
 const{error}=await sb.auth.updateUser({password:a});if(error)return fail(error);$("n1").value=$("n2").value="";$("ne").textContent="";alert("Password changed.")}
+
+/* ===== STAGE 2 ===== */
+const LBL=Object.fromEntries([["full_name","Name"],["phone","Contact"],...PF]);
+function av(m,s=40){return PH[m.photo_path]?`<img src="${PH[m.photo_path]}" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover;flex:none">`:`<div class="av" style="width:${s}px;height:${s}px;font-size:${Math.round(s/3)}px">${ini(m.full_name)}</div>`}
+async function loadPh(){const ps=P.map(m=>m.photo_path).filter(Boolean);PH={};if(!ps.length)return;const s=await sb.storage.from("photos").createSignedUrls(ps,3600);(s.data||[]).forEach(x=>{if(x.signedUrl)PH[x.path]=x.signedUrl})}
+function shrink(f){return new Promise((ok,no)=>{const i=new Image;i.onload=()=>{const s=Math.min(1,480/Math.max(i.width,i.height)),c=document.createElement("canvas");c.width=i.width*s;c.height=i.height*s;c.getContext("2d").drawImage(i,0,0,c.width,c.height);c.toBlob(b=>b?ok(b):no(new Error("Photo failed")),"image/jpeg",.8)};i.onerror=()=>no(new Error("Not a valid photo"));i.src=URL.createObjectURL(f)})}
+async function upPhoto(id){const f=$("ph")&&$("ph").files[0];if(!f)return null;const b=await shrink(f),p=id+"/"+Date.now()+".jpg",{error}=await sb.storage.from("photos").upload(p,b,{contentType:"image/jpeg"});if(error)throw error;return p}
+async function fn(body){const r=await sb.functions.invoke("admin-users",{body});if(r.error){let m=r.error.message;try{m=(await r.error.context.json()).error||m}catch(e){}throw new Error(m)}return r.data}
+function addU(){const n=Math.max(0,...P.map(m=>m.member_no||0))+1;sh(`<h2>Add new account</h2><input id="u1" placeholder="Full name"><input id="u2" placeholder="Contact no."><small style="color:var(--mu)">User ID (used to log in)</small><input id="u3" value="m${String(n).padStart(3,"0")}" autocapitalize="off"><input id="u4" placeholder="Temporary password (min 8 characters)">${me.role==="super_admin"?`<select id="u5"><option value="member">Member</option><option value="admin">Admin</option></select>`:""}<div class="err" id="ue"></div><button class="b" onclick="saveU()">Create account</button>`)}
+async function saveU(){try{const pw=$("u4").value,r=await fn({action:"create",full_name:$("u1").value,phone:$("u2").value,login_id:$("u3").value,password:pw,role:$("u5")?$("u5").value:"member"});hide();alert("Created.\nUser ID: "+r.login_id+"\nPassword: "+pw+"\nAsk them to change it after first login.");await load()}catch(e){$("ue").textContent=e.message}}
+function resetPw(id){const m=P.find(x=>x.id===id);sh(`<h2>New password for ${esc(m.full_name)}</h2><input id="r1" placeholder="New password (min 8 characters)"><div class="err" id="ue"></div><button class="b" onclick="saveRp('${id}')">Save password</button>`)}
+async function saveRp(id){try{const pw=$("r1").value;await fn({action:"reset_password",user_id:id,password:pw});hide();alert("Password changed. New password: "+pw)}catch(e){$("ue").textContent=e.message}}
+async function rem(id,a){if(a==="remove"&&!confirm("Remove this member? Their payment history stays in the records."))return;try{await fn({action:a,user_id:id});hide();await load()}catch(e){fail(e)}}
+async function setRole(id,role){try{await fn({action:"set_role",user_id:id,role});hide();await load()}catch(e){fail(e)}}
+function reqM(){const p=lastPr||{};sh(`<h2>Request profile change</h2><small style="color:var(--mu)">An admin reviews it before it is applied.</small>${[["full_name","Full name",me.full_name],["phone","Contact no.",me.phone],...PF.map(f=>[f[0],f[1],p[f[0]]])].map(f=>`<small style="color:var(--mu)">${f[1]}</small><input id="e_${f[0]}" ${f[0]==="dob"?'type="date"':""} value="${esc(f[2]||"")}">`).join("")}<small style="color:var(--mu)">New photo</small><input id="ph" type="file" accept="image/*"><button class="b" onclick="sendReq()">Send for approval</button>`)}
+async function sendReq(){try{const p=lastPr||{},ch={};[["full_name",me.full_name],["phone",me.phone],...PF.map(f=>[f[0],p[f[0]]])].forEach(([k,o])=>{const v=$("e_"+k).value.trim();if(v&&v!==(o||""))ch[k]=v});const pp=await upPhoto(uid);if(pp)ch.photo_path=pp;if(!Object.keys(ch).length){hide();return}const{error}=await sb.from("profile_change_requests").insert({member_id:uid,changes:ch});if(error)throw error;hide();alert("Sent to admin for approval.");await load()}catch(e){fail(e)}}
+function appr(){const L=RQ.filter(r=>r.status==="pending");sh(`<h2>Profile change requests</h2>${L.map(r=>{const m=P.find(x=>x.id===r.member_id)||{};return `<div class="card"><b>${esc(m.full_name)}</b>${Object.entries(r.changes).map(([k,v])=>`<div class="kv"><span>${esc(LBL[k]||"Photo")}</span><b>${k==="photo_path"?"New photo":esc(v)}</b></div>`).join("")}<div class="grid" style="margin-top:8px"><button class="b" onclick="rv('${r.id}',true)">Approve</button><button class="b r" onclick="rv('${r.id}',false)">Reject</button></div></div>`}).join("")||"No pending requests."}`)}
+async function rv(id,ok){const{error}=await sb.rpc("review_change",{request_id:id,approve:ok});if(error)return fail(error);await load();appr()}
+function chat(){return `${/^https:\/\//.test(S.meeting_link||"")?`<button class="b g" onclick="window.open(S.meeting_link,'_blank')">Join video / audio meeting</button>`:""}<div class="card"><h2>Group chat</h2><div id="cl" style="max-height:55vh;overflow:auto;margin-bottom:8px"></div><input id="cm" placeholder="Type a message" onkeydown="if(event.key==='Enter')send()"><button class="b" onclick="send()">Send</button></div>`}
+async function openChat(){const r=await sb.from("messages").select("*").order("id",{ascending:false}).limit(100);if(r.error)return fail(r.error);CH=r.data.reverse();rc()}
+function rc(){const el=$("cl");if(!el)return;el.innerHTML=CH.map(c=>{const m=P.find(x=>x.id===c.sender_id),mine=c.sender_id===uid;return `<div style="display:flex;flex-direction:column;align-items:${mine?"flex-end":"flex-start"};margin-bottom:8px"><small style="color:var(--mu)">${esc(m?m.full_name:"Member")} \u00b7 ${new Date(c.created_at).toLocaleString([],{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}${isA()?` \u00b7 <a href="#" onclick="delMsg(${c.id});return false">delete</a>`:""}</small><div style="background:${mine?"var(--ac)":"var(--ac2)"};color:${mine?"#fff":"var(--tx)"};padding:7px 11px;border-radius:12px;max-width:85%;white-space:pre-wrap">${esc(c.body)}</div></div>`}).join("")||"No messages yet";el.scrollTop=1e9}
+async function send(){const i=$("cm"),v=i.value.trim();if(!v)return;i.value="";const{error}=await sb.from("messages").insert({body:v});if(error)fail(error)}
+async function delMsg(id){await sb.from("messages").delete().eq("id",id)}
+function stmtForm(){const o=d=>MONTHS.map(k=>`<option value="${k}" ${k===d?"selected":""}>${ml(k)}</option>`).join("");return `<div class="card"><h2>Statement</h2><small style="color:var(--mu)">From month</small><select id="t1">${o(MONTHS[2])}</select><small style="color:var(--mu)">To month</small><select id="t2">${o(CUR)}</select><button class="b" onclick="runStmt()">Generate</button></div><div id="so"></div>`}
+async function runStmt(){let a=$("t1").value,b=$("t2").value;if(a>b)[a,b]=[b,a];const all=[];for(let f=0;;f+=1000){const r=await sb.from("payments").select("*").gte("for_month",a).lte("for_month",b).range(f,f+999);if(r.error)return fail(r.error);all.push(...r.data);if(r.data.length<1000)break}
+const ks=MONTHS.filter(k=>k>=a&&k<=b).reverse(),mm=P.filter(m=>m.status==="active"||all.some(x=>x.member_id===m.id)),by=new Map(all.map(x=>[x.member_id+x.for_month,x]));let i=0;SR=[];
+ks.forEach(k=>mm.forEach(m=>{const r=by.get(m.id+k);SR.push([++i,m.full_name,m.phone||"",ml(k),r?r.amount:"",r?r.paid_on:"",r?(METH[r.method]||r.method):"",r?"Paid":"Due"])}));
+const t=all.reduce((s,x)=>s+Number(x.amount),0),td='style="padding:6px;border-bottom:1px solid var(--bd);white-space:nowrap;text-align:left"';
+$("so").innerHTML=`<div class="card"><b>${ml(a)} to ${ml(b)}</b> \u00b7 Collected ${fmt(t)}<div class="grid" style="margin:8px 0"><button class="b" onclick="csv()">Download Excel (CSV)</button><button class="b g" onclick="print()">Print / Save PDF</button></div><div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:13px"><tr>${["SL","Name","Contact","Month","Amount","Date","Method","Status"].map(h=>`<th ${td}>${h}</th>`).join("")}</tr>${SR.map(r=>`<tr>${r.map(c=>`<td ${td}>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div></div>`}
+function csv(){const q=v=>'"'+String(v).replace(/"/g,'""')+'"',t=["SL,Name,Contact,Month,Amount,Date,Method,Status",...SR.map(r=>r.map(q).join(","))].join("\r\n"),a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+t],{type:"text/csv"}));a.download="bond-prosper-statement.csv";a.click()}
 
 if(SUPABASE_URL.startsWith("PASTE")){$("app").innerHTML='<div class="card">Setup needed: open this file and paste your Supabase Project URL and anon key at the top.</div>'}
 else sb.auth.getSession().then(({data})=>{if(data.session){uid=data.session.user.id;start()}else showLogin()});
