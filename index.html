@@ -30,6 +30,9 @@ nav button{flex:1;border:0;background:none;color:var(--mu);font-size:11px;displa
 .err{color:var(--rd);font-size:13px;margin-bottom:6px}.note{background:var(--ac2);color:var(--ac);padding:10px 12px;border-radius:12px;font-size:13px;margin-top:8px}
 .login{max-width:380px;margin:28px auto 0;text-align:center}.login p{color:var(--mu);margin:0}.login .card{text-align:left}
 .logo{width:68px;height:68px;border-radius:22px;background:var(--g);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:21px;margin:0 auto 8px;box-shadow:0 10px 26px rgba(14,159,110,.35)}
+/*p5*/.bar{height:8px;background:var(--ac2);border-radius:99px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:var(--g);border-radius:99px}
+.chips{display:flex;gap:8px;margin-bottom:12px}.chips button{flex:1;border:1px solid var(--bd);background:var(--card);color:var(--mu);padding:9px;border-radius:99px;font:inherit;font-weight:600;cursor:pointer}.chips button.on{background:var(--ac2);color:var(--ac);border-color:var(--ac)}
+.spin{width:36px;height:36px;border:4px solid var(--ac2);border-top-color:var(--ac);border-radius:50%;margin:80px auto;animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
 @media print{header,nav,button,select,input,.modal{display:none!important}body{padding:0}}
 </style></head><body>
 <header><b>BOND &amp; PROSPER</b><span id="who" onclick="tab='acc';draw()" style="cursor:pointer"></span></header>
@@ -68,7 +71,7 @@ async function out(){clearTimeout(idle);await sb.auth.signOut();showLogin()}
 function bump(){clearTimeout(idle);idle=setTimeout(out,900000)}
 document.addEventListener("click",()=>{if(uid)bump()});
 
-async function start(){await load();if(!me||me.status!=="active"){await out();return}
+async function start(){$("app").innerHTML='<div class="spin"></div>';$("nav").innerHTML="";await load();if(!me||me.status!=="active"){await out();return}
 $("who").innerHTML=esc(me.full_name)+"<br>"+RN[me.role];bump();
 const ch=sb.channel("live");["payments","settings","profiles","profile_change_requests"].forEach(t=>ch.on("postgres_changes",{event:"*",schema:"public",table:t},sched));ch.on("postgres_changes",{event:"*",schema:"public",table:"messages"},()=>{if(tab==="chat")openChat()});ch.subscribe()}
 function sched(){clearTimeout(tm);tm=setTimeout(async()=>{await load()},400)}
@@ -80,14 +83,14 @@ me=P.find(x=>x.id===uid);if(me&&tab!=="chat")draw()}
 
 function draw(){if(!me)return;
 $("nav").innerHTML=[["dash","Home"],["mem","Members"],["pay","Payments"],["chat","Chat"],["acc","Profile"]].map(x=>`<button class="${tab===x[0]?"on":""}" onclick="tab='${x[0]}';draw()">${IC[x[0]]}<span>${x[1]}</span></button>`).join("");
-$("app").innerHTML={dash,mem,pay,chat,acc:acc2,stm:stmtForm}[tab]();if(tab==="chat")openChat();else window.scrollTo(0,0);if(tab==="acc")fillAcc()}
+$("app").innerHTML={dash,mem,pay,chat,acc:acc2,stm:stmtForm}[tab]();if(tab==="chat")openChat();else window.scrollTo(0,0);if(tab==="acc")fillAcc();if(tab==="dash")fillChart()}
 
 function dash(){const act=P.filter(m=>m.status==="active"),ids=new Set(PAYC.map(x=>x.member_id)),paid=act.filter(m=>ids.has(m.id)).length;
-return `<div class="hero"><small>Welcome, ${esc(me.full_name.split(" ")[0])}</small><b>${fmt(F.total_fund)}</b><span>Total fund \u00b7 ${F.active_members} members</span></div><div class="grid"><div class="card stat"><small>My saving</small><b>${fmt((TT[uid]||{}).total_saved)}</b></div><div class="card stat"><small>My share</small><b>${Number((TT[uid]||{}).share_percent||0).toFixed(2)}%</b></div>
+return `<div class="hero"><small>Welcome, ${esc(me.full_name.split(" ")[0])}</small><b>${fmt(F.total_fund)}</b><span>Total fund \u00b7 ${F.active_members} members</span></div>${banner(paid,act.length)}<div class="grid"><div class="card stat"><small>My saving</small><b>${fmt((TT[uid]||{}).total_saved)}</b></div><div class="card stat"><small>My share</small><b>${Number((TT[uid]||{}).share_percent||0).toFixed(2)}%</b></div>
 <div class="card stat"><small>${ml(CUR)} paid</small><b>${paid}</b></div><div class="card stat"><small>${ml(CUR)} due</small><b>${act.length-paid}</b></div></div>
 <div class="card"><h2>Monthly instalment</h2><b style="font-size:22px">${fmt(S.installment_amount)}</b> per member</div>
 <div class="card"><h2>Send money to</h2>${[["Bank",S.bank_name],["Account no.",S.account_no],["Holder",S.account_holder],["Branch",S.branch],["Mobile banking",S.mobile_banking]].map(x=>`<div class="kv"><span>${x[0]}</span><b>${esc(x[1]||"-")}</b></div>`).join("")}
-${isA()?`<button class="b" style="margin-top:10px" onclick="editS()">Edit instalment and payment details</button>`:""}</div>`}
+${isA()?`<button class="b" style="margin-top:10px" onclick="editS()">Edit instalment and payment details</button>`:""}</div><div class="card"><h2>Collections, last 12 months</h2><div id="chart">Loading...</div></div>`}
 const SF=[["installment_amount","Monthly instalment (number)"],["bank_name","Bank name"],["account_no","Account number"],["account_holder","Account holder"],["branch","Branch"],["mobile_banking","Mobile banking number"],["meeting_link","Meeting link (https://, Google Meet or Jitsi)"]];
 function editS(){sh(`<h2>Edit payment details</h2>${SF.map(f=>`<small style="color:var(--mu)">${f[1]}</small><input id="s_${f[0]}" value="${esc(S[f[0]])}">`).join("")}<button class="b" onclick="saveS()">Save</button>`)}
 async function saveS(){const o={updated_at:new Date().toISOString()};SF.forEach(f=>o[f[0]]=$("s_"+f[0]).value.trim());o.installment_amount=Number(o.installment_amount);
@@ -118,7 +121,7 @@ const o={};PF.forEach(f=>o[f[0]]=v(f[0]));const b=await sb.from("profiles_privat
 
 function pay(){const ids=new Map(PAYM.map(x=>[x.member_id,x])),act=P.filter(m=>m.status==="active"),c=act.filter(m=>ids.has(m.id)).length;
 return `<button class="b g" onclick="tab='stm';draw()">Statement (Excel / PDF)</button><select onchange="setPm(this.value)">${MONTHS.map(k=>`<option value="${k}" ${k===pm?"selected":""}>${ml(k)}</option>`).join("")}</select>${isA()?`<button class="b" onclick="addP()">+ Record a payment</button>`:""}
-<div class="card"><h2>${ml(pm)}: ${c} paid, ${act.length-c} due</h2>${act.map(m=>{const r=ids.get(m.id);return `<div class="row" onclick="${r&&isA()?`editP('${r.id}')`:`prof('${m.id}')`}">${av(m)}<div class="grow">${esc(m.full_name)}<small>${r?r.paid_on+" \u00b7 "+(METH[r.method]||r.method)+" \u00b7 "+fmt(r.amount):"Not paid yet"}</small></div><span class="tag ${r?"paid":"due"}">${r?"Paid":"Due"}</span></div>`}).join("")}</div>`}
+<div class="chips">${["all","paid","due"].map(x=>`<button class="${pf===x?"on":""}" onclick="pf='${x}';draw()">${x[0].toUpperCase()+x.slice(1)}</button>`).join("")}</div><div class="card"><h2>${ml(pm)}: ${c} paid, ${act.length-c} due</h2>${act.filter(m=>pf==="all"||(pf==="paid")===ids.has(m.id)).map(m=>{const r=ids.get(m.id);return `<div class="row" onclick="${r&&isA()?`editP('${r.id}')`:`prof('${m.id}')`}">${av(m)}<div class="grow">${esc(m.full_name)}<small>${r?r.paid_on+" \u00b7 "+(METH[r.method]||r.method)+" \u00b7 "+fmt(r.amount):"Not paid yet"}</small></div><span class="tag ${r?"paid":"due"}">${r?"Paid":"Due"}</span></div>`}).join("")}</div>`}
 async function setPm(v){pm=v;const r=await sb.from("payments").select("*").eq("for_month",pm);if(r.error)return fail(r.error);PAYM=r.data;draw()}
 function addP(){sh(`<h2>Record payment</h2><select id="p1">${P.filter(m=>m.status==="active").map(m=>`<option value="${m.id}">${esc(m.full_name)}</option>`).join("")}</select><select id="p2">${MONTHS.map(k=>`<option value="${k}" ${k===pm?"selected":""}>${ml(k)}</option>`).join("")}</select><input id="p3" type="number" value="${S.installment_amount}"><input id="p4" type="date" value="${new Date().toISOString().slice(0,10)}"><select id="p5">${Object.entries(METH).map(x=>`<option value="${x[0]}">${x[1]}</option>`).join("")}</select><button class="b" onclick="saveP()">Save payment</button>`)}
 async function saveP(){const o={member_id:$("p1").value,for_month:$("p2").value,amount:Number($("p3").value),paid_on:$("p4").value,method:$("p5").value};
@@ -170,13 +173,21 @@ const IC={dash:sv('<path d="M3 11l9-8 9 8M5 10v10h14V10"/>'),mem:sv('<circle cx=
 function acc2(){const t=TT[uid]||{};return `<div class="card" style="text-align:center"><div style="display:flex;justify-content:center;margin-bottom:10px">${av(me,92)}</div><h1>${esc(me.full_name)}</h1><div style="color:var(--mu)">User ID: ${esc(me.login_id||"-")} \u00b7 ${RN[me.role]}</div><div style="color:var(--mu)">${esc(me.phone||"")}</div><button class="b" style="margin-top:14px" onclick="isA()?editM(uid):reqM()">Edit my profile</button></div>
 <div class="grid"><div class="card stat"><small>My total saving</small><b>${fmt(t.total_saved)}</b></div><div class="card stat"><small>My share of fund</small><b>${Number(t.share_percent||0).toFixed(2)}%</b></div></div>
 <div class="card"><h2>Personal details</h2><div id="mypd">Loading...</div></div>
-<div class="card"><h2>My payment history</h2><div id="myph">Loading...</div></div>
+<div class="card"><h2>My payment history</h2><small style="color:var(--mu)">Tap a paid month to open its receipt.</small><div id="myph">Loading...</div></div>
 <div class="card"><h2>Change password</h2><input id="n1" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password"><input id="n2" type="password" placeholder="Repeat new password" autocomplete="new-password"><div id="ne" class="err"></div><button class="b" onclick="chPw()">Save password</button></div>
 <button class="b g" onclick="out()">Log out</button>`}
 async function fillAcc(){const[a,b]=await Promise.all([sb.from("profiles_private").select("*").eq("id",uid).single(),sb.from("payments").select("*").eq("member_id",uid).order("for_month",{ascending:false}).limit(500)]);lastPr=a.data;const d=$("mypd"),h=$("myph");if(!d||!h)return;
 d.innerHTML=a.data?PF.map(f=>`<div class="kv"><span>${f[1]}</span><b>${esc(a.data[f[0]]||"-")}</b></div>`).join("")+(RQ.some(r=>r.member_id===uid)?`<div class="note">Your change request is waiting for admin approval.</div>`:""):"Could not load";
-const by=new Map((b.data||[]).map(x=>[x.for_month,x])),j=(me.joined_on||"2000-01-01").slice(0,7)+"-01";
-h.innerHTML=MONTHS.filter(k=>k>=j).slice(0,12).map(k=>{const r=by.get(k);return `<div class="kv"><span>${ml(k)}</span><b>${r?fmt(r.amount)+" \u00b7 "+r.paid_on:"-"} <span class="tag ${r?"paid":"due"}">${r?"Paid":"Due"}</span></b></div>`}).join("")||"No months yet"}
+MYP=b.data||[];const by=new Map(MYP.map(x=>[x.for_month,x])),j=(me.joined_on||"2000-01-01").slice(0,7)+"-01";
+h.innerHTML=MONTHS.filter(k=>k>=j).slice(0,12).map(k=>{const r=by.get(k);return `<div class="kv" ${r?`onclick="rcpt('${r.id}')" style="cursor:pointer"`:""}><span>${ml(k)}</span><b>${r?fmt(r.amount)+" \u00b7 "+r.paid_on:"-"} <span class="tag ${r?"paid":"due"}">${r?"Paid":"Due"}</span></b></div>`}).join("")||"No months yet"}
+
+let pf="all",MYP=[];
+function banner(paid,n){const ok=PAYC.some(x=>x.member_id===uid),pct=n?Math.round(paid/n*100):0;return `<div class="card" style="border-color:${ok?"var(--ac)":"var(--rd)"}"><div style="display:flex;gap:10px;align-items:center"><span class="tag ${ok?"paid":"due"}">${ok?"PAID":"DUE"}</span><b>${ok?"Your "+ml(CUR)+" instalment is received. Thank you!":"Your "+ml(CUR)+" instalment of "+fmt(S.installment_amount)+" is due."}</b></div><div style="margin-top:12px;color:var(--mu);font-size:13px">Collection this month: ${paid} of ${n} members (${pct}%)</div><div class="bar"><i style="width:${pct}%"></i></div></div>`}
+async function fillChart(){const ks=MONTHS.slice(0,12).reverse(),all=[];for(let f=0;;f+=1000){const r=await sb.from("payments").select("for_month,amount").gte("for_month",ks[0]).range(f,f+999);if(r.error)return;all.push(...r.data);if(r.data.length<1000)break}
+const el=$("chart");if(!el)return;const sm=Object.fromEntries(ks.map(k=>[k,0]));all.forEach(x=>{if(x.for_month in sm)sm[x.for_month]+=Number(x.amount)});const mx=Math.max(1,...Object.values(sm)),h=120;
+el.innerHTML=`<svg viewBox="0 0 300 ${h+22}" style="width:100%">${ks.map((k,i)=>{const bh=Math.round(sm[k]/mx*h),x=i*25+3;return `<rect x="${x}" y="${h-bh}" width="19" height="${bh}" rx="4" fill="var(--ac)" opacity="${k===CUR?1:.55}"/><text x="${x+9.5}" y="${h+14}" font-size="8" text-anchor="middle" fill="var(--mu)">${MN[+k.slice(5,7)-1]}</text>`}).join("")}</svg><div style="color:var(--mu);font-size:12px">Highest month: ${fmt(mx)}</div>`}
+function rcpt(id){const p=MYP.find(x=>x.id===id);if(!p)return;sh(`<div id="rc"><h2>Payment receipt</h2><div class="kv"><span>Receipt no.</span><b>BP-${p.id.slice(0,8).toUpperCase()}</b></div><div class="kv"><span>Member</span><b>${esc(me.full_name)}</b></div><div class="kv"><span>For month</span><b>${ml(p.for_month)}</b></div><div class="kv"><span>Amount</span><b>${fmt(p.amount)}</b></div><div class="kv"><span>Date paid</span><b>${p.paid_on}</b></div><div class="kv"><span>Method</span><b>${METH[p.method]||p.method}</b></div></div><button class="b" style="margin-top:12px" onclick="prRc()">Print / Save PDF</button>`)}
+function prRc(){const w=window.open("","_blank");if(!w)return alert("Please allow pop-ups to print");w.document.write(`<title>Receipt</title><body style="font-family:sans-serif;max-width:420px;margin:30px auto"><h1>BOND &amp; PROSPER</h1>${$("rc").innerHTML}<style>.kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ddd}</style>`);w.document.close();w.print()}
 
 if(SUPABASE_URL.startsWith("PASTE")){$("app").innerHTML='<div class="card">Setup needed: open this file and paste your Supabase Project URL and anon key at the top.</div>'}
 else sb.auth.getSession().then(({data})=>{if(data.session){uid=data.session.user.id;start()}else showLogin()});
